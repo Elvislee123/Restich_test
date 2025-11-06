@@ -77,14 +77,18 @@ function escapeHtml(s) {
 }
 
 async function fetchRecords() {
-  // Root "/" on your Worker returns list; pass table explicitly
   const url = new URL(CONFIG.PROXY_BASE);
   url.searchParams.set("table", CONFIG.TABLE_NAME);
+  console.log("FETCH", url.toString());
   const res = await fetch(url.toString(), { cache: "no-store" });
+  console.log("STATUS", res.status, [...res.headers.entries()]);
+  let body;
+  try { body = await res.json(); } catch { body = await res.text(); }
+  console.log("BODY", body);
   if (!res.ok) throw new Error("List failed " + res.status);
-  const json = await res.json();
-  return (json.records || []).map(r => ({ id: r.id, ...r.fields }));
+  return (body.records || []).map(r => ({ id: r.id, ...r.fields }));
 }
+
 
 function render(records) {
   const tbody = $("#tbl tbody");

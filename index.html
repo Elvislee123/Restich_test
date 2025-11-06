@@ -1,35 +1,39 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Restich Test — Client ID & Complete</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Restich_Test — Client ID + Complete</title>
 <style>
-  :root{--bg:#0b0f14;--panel:#101720;--muted:#1f2a37;--text:#e8eef6;--accent:#7dd3fc}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  header{position:sticky;top:0;background:#0d141d;border-bottom:1px solid var(--muted);padding:12px}
-  .wrap{max-width:900px;margin:0 auto;padding:12px}
-  h1{margin:0;font-size:18px}
-  button{border:1px solid var(--muted);background:#0e1620;color:var(--text);padding:8px 10px;border-radius:10px;cursor:pointer}
-  button.primary{background:var(--accent);color:#07202b;border:0;font-weight:700}
-  table{width:100%;border-collapse:collapse;margin-top:12px}
-  th,td{border:1px solid var(--muted);padding:10px;text-align:left}
-  th{background:#0e1620}
-  tr:hover{background:#0d1824}
-  .hint{opacity:.75;font-size:12px}
-  .toast{position:fixed;right:16px;bottom:16px;background:#0e1620;border:1px solid var(--muted);padding:10px 12px;border-radius:10px;display:none}
-  label.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
-  input[type="checkbox"]{width:18px;height:18px}
+  :root { --bg:#0b0f14; --panel:#101720; --muted:#1f2a37; --text:#e8eef6; --accent:#7dd3fc; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+  header { position:sticky; top:0; background:#0d141d; border-bottom:1px solid var(--muted); }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 12px; }
+  h1 { margin:0 0 2px 0; font-size: 18px; }
+  .hint { opacity:.75; font-size:12px; }
+  button { border:1px solid var(--muted); background:#0e1620; color:var(--text); padding:8px 10px; border-radius:10px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#07202b; border:0; font-weight:700; }
+  main { padding: 12px; }
+  table { width:100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { border:1px solid var(--muted); padding:10px; text-align:left; }
+  th { background:#0e1620; }
+  tr:hover { background:#0d1824; }
+  label.switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer; }
+  input[type="checkbox"] { width:18px; height:18px; }
+  .toast { position: fixed; right: 16px; bottom: 16px; background:#0e1620; border:1px solid var(--muted); padding:10px 12px; border-radius:10px; display:none; }
 </style>
 </head>
 <body>
 <header>
-  <div class="wrap" style="display:flex;gap:10px;align-items:center;justify-content:space-between;">
+  <div class="wrap" style="display:flex; gap:10px; align-items:center; justify-content:space-between;">
     <div>
-      <h1>Restich Test — Client ID & Complete</h1>
-      <div class="hint">Test interface connected to Airtable through Cloudflare Worker.</div>
+      <h1>Restich_Test — Client ID & Complete</h1>
+      <div class="hint">
+        Reads from Cloudflare Worker (Airtable proxy). Toggle “Complete” to update Airtable.
+      </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div style="display:flex; gap:8px;">
       <button id="btnRefresh" class="primary">Refresh</button>
     </div>
   </div>
@@ -38,7 +42,10 @@
 <main class="wrap">
   <table id="tbl">
     <thead>
-      <tr><th style="width:60%">Client ID</th><th style="width:40%">Complete</th></tr>
+      <tr>
+        <th style="width:60%">Client ID</th>
+        <th style="width:40%">Complete</th>
+      </tr>
     </thead>
     <tbody></tbody>
   </table>
@@ -47,94 +54,107 @@
 <div id="toast" class="toast"></div>
 
 <script>
+/* ========= CONFIG =========
+   PROXY_BASE: your deployed Worker URL
+   TABLE_NAME: use your tbl... ID (best) or "Client Orders"
+*/
 const CONFIG = {
-  PROXY_BASE: "https://restich-test-proxy.restich.workers.dev", // your new Worker URL
-  TABLE_NAME: "Client Orders",
+  PROXY_BASE: "https://restich-test-proxy.restich.workers.dev",
+  TABLE_NAME: "Client Orders", // or: "tblXXXXXXXXXXXXXX"
   FIELDS: {
-    id: "id",
     clientId: "Client ID",
-    complete: "Complete"
+    complete: "Complete",
   }
 };
+/* ========================= */
 
-const $ = (q, el=document)=>el.querySelector(q);
+const $ = (q, el=document) => el.querySelector(q);
 
-async function fetchRecords(){
-  const url = new URL(CONFIG.PROXY_BASE + "/list");
-  url.searchParams.set("table", CONFIG.TABLE_NAME);
-  const r = await fetch(url.toString(), { cache: "no-store" });
-  if(!r.ok){ throw new Error("List failed " + r.status); }
-  const j = await r.json();
-  return (j.records||[]).map(rec => ({ id: rec.id, ...rec.fields }));
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+  ));
 }
 
-function render(records){
+async function fetchRecords() {
+  // Root "/" on your Worker returns list; pass table explicitly
+  const url = new URL(CONFIG.PROXY_BASE);
+  url.searchParams.set("table", CONFIG.TABLE_NAME);
+  const res = await fetch(url.toString(), { cache: "no-store" });
+  if (!res.ok) throw new Error("List failed " + res.status);
+  const json = await res.json();
+  return (json.records || []).map(r => ({ id: r.id, ...r.fields }));
+}
+
+function render(records) {
   const tbody = $("#tbl tbody");
   tbody.innerHTML = records.map(rec => rowHTML(rec)).join("");
-  tbody.querySelectorAll('input[data-id]').forEach(cb=>{
-    cb.addEventListener('change', async (e)=>{
+
+  // Attach listeners
+  tbody.querySelectorAll('input[data-id]').forEach(cb => {
+    cb.addEventListener('change', async (e) => {
       const id = e.target.getAttribute('data-id');
       const checked = e.target.checked;
       try {
         await updateComplete(id, checked);
         toast("Updated ✓");
-      } catch(err){
+      } catch (err) {
         console.error(err);
-        e.target.checked = !checked;
+        e.target.checked = !checked; // revert on failure
         toast("Update failed");
       }
     });
   });
 }
 
-function rowHTML(rec){
-  const F = CONFIG.FIELDS;
-  const cid = rec[F.clientId] ?? "";
-  const done = !!rec[F.complete];
+function rowHTML(rec) {
+  const cid = rec[CONFIG.FIELDS.clientId] ?? "";
+  const done = !!rec[CONFIG.FIELDS.complete];
   return `
     <tr>
-      <td>${escapeHtml(String(cid))}</td>
+      <td>${escapeHtml(cid)}</td>
       <td>
         <label class="switch">
-          <input type="checkbox" ${done?"checked":""} data-id="${rec.id}" aria-label="Complete for ${escapeHtml(String(cid))}">
-          <span>${done? "Complete" : "Mark complete"}</span>
+          <input type="checkbox" ${done ? "checked" : ""} data-id="${rec.id}" aria-label="Complete for ${escapeHtml(cid)}">
+          <span>${done ? "Complete" : "Mark complete"}</span>
         </label>
       </td>
-    </tr>`;
+    </tr>
+  `;
 }
 
-async function updateComplete(recordId, value){
+async function updateComplete(recordId, value) {
   const url = new URL(CONFIG.PROXY_BASE + "/update");
   url.searchParams.set("id", recordId);
+  url.searchParams.set("table", CONFIG.TABLE_NAME);
   const body = { fields: { [CONFIG.FIELDS.complete]: !!value } };
-  const r = await fetch(url.toString(), {
+  const res = await fetch(url.toString(), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
-  if(!r.ok){ throw new Error("Patch failed " + r.status); }
+  if (!res.ok) throw new Error("Patch failed " + res.status);
 }
 
-function toast(msg){
+function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
   t.style.display = "block";
   clearTimeout(t._h);
-  t._h = setTimeout(()=> t.style.display="none", 1800);
+  t._h = setTimeout(() => t.style.display = "none", 1600);
 }
 
-function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-
-async function init(){
-  try{
+async function init() {
+  try {
     const records = await fetchRecords();
     render(records);
-  }catch(e){
+  } catch (e) {
     console.error(e);
     toast("Load failed");
   }
 }
-document.getElementById("btnRefresh").addEventListener("click", init);
+
+$("#btnRefresh").addEventListener("click", init);
 init();
 </script>
 </body>
